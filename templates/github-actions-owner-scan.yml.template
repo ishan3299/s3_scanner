@@ -1,0 +1,36 @@
+name: S3 Security Scan
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  s3-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install Dependencies
+        run: |
+          pip install boto3
+
+      - name: Run S3 Scanner
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+          TARGET_BUCKET: ${{ secrets.TARGET_BUCKET_NAME }}
+        run: |
+          # Ensure the script is executable
+          chmod +x scripts/owner_scan_helper.py
+          
+          # Run the scanner
+          # Note: Fails execution if risk score > 0
+          python scripts/owner_scan_helper.py "$TARGET_BUCKET"

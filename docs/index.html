@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>S3 Misconfiguration Scanner</title>
+    <meta name="description" content="A safe, client-side S3 bucket misconfiguration scanner.">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    
+    <!-- Styles -->
+    <link rel="stylesheet" href="assets/css/style.css">
+    
+    <!-- Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <div class="logo">
+                <i class="fa-brands fa-aws"></i>
+                <h1>S3 Scanner</h1>
+            </div>
+            <nav>
+                <a href="https://github.com/ishan3299/s3_scanner" target="_blank" class="github-link">
+                    <i class="fa-brands fa-github"></i> View on GitHub
+                </a>
+            </nav>
+        </header>
+
+        <main>
+            <section class="hero">
+                <h2>Secure Your Buckets</h2>
+                <p>Detect public S3 bucket misconfigurations safely and instantly. Client-side processing ensures your data never leaves your browser.</p>
+            </section>
+
+            <section class="scanner-interface">
+                <div class="input-group">
+                    <input type="text" id="bucketInput" placeholder="Enter Bucket Name or URL (e.g., my-bucket)" autocomplete="off">
+                    <button id="scanBtn">
+                        <span class="btn-text">Scan Bucket</span>
+                        <div class="spinner hidden"></div>
+                    </button>
+                </div>
+                <p class="input-hint">Enter the bucket name (e.g., <code>flaws.cloud</code>) or full URL.</p>
+            </section>
+
+            <section id="resultsSection" class="results-section hidden">
+                <div class="results-header">
+                    <h3>Scan Results: <span id="targetBucketName"></span></h3>
+                    <div class="actions">
+                        <button id="exportBtn" class="secondary-btn"><i class="fa-solid fa-download"></i> Export Report</button>
+                    </div>
+                </div>
+                
+                <div class="score-card">
+                    <div class="score-circle-container">
+                        <svg class="score-ring" width="120" height="120">
+                            <circle class="score-ring-bg" stroke="#334155" stroke-width="8" fill="transparent" r="52" cx="60" cy="60"/>
+                            <circle id="scoreRing" class="score-ring-fill" stroke="#10b981" stroke-width="8" fill="transparent" r="52" cx="60" cy="60"/>
+                        </svg>
+                        <div class="score-value">
+                            <span id="scoreValue">0</span>
+                            <small>Risk Score</small>
+                        </div>
+                    </div>
+                    <div class="score-details">
+                        <h4 id="riskLevel">Safe</h4>
+                        <p id="riskSummary">No issues detected so far.</p>
+                    </div>
+                </div>
+
+                <div class="findings-grid" id="findingsGrid">
+                    <!-- Findings injected by JS -->
+                </div>
+                
+                <div id="remediationSection" class="remediation-section hidden">
+                    <h4><i class="fa-solid fa-shield-halved"></i> Remediation Recommendations</h4>
+                    <ul id="remediationList">
+                        <!-- Remediations injected by JS -->
+                    </ul>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>
+                <strong>Disclaimer:</strong> This tool is for educational and authorized testing purposes only. 
+                Do not scan buckets you do not own or have permission to test.
+            </p>
+            <p>Created with <i class="fa-solid fa-heart" style="color: #e11d48;"></i> by Ishan Patel</p>
+        </footer>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="assets/js/scanner.js"></script>
+</body>
+</html>
