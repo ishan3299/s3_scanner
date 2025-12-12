@@ -10,7 +10,7 @@
 
 If you discover a security vulnerability within this project, please **DO NOT** open a public issue.
 
-Instead, please report it via email to `security@antigravity.dev`.
+Instead, please report it via email to `ishan.patel1998@gmail.com`.
 
 We will investigate all reports and do our best to quickly fix the problem.
 
