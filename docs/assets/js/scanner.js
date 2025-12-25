@@ -17,11 +17,13 @@ class S3Scanner {
             bucketName: bucketName,
             exists: false,
             region: 'Unknown',
+            endpoint: '',
             publicAccess: false,
             listingEnabled: false,
             websiteEnabled: false,
             corsOpen: false,
             findings: [],
+            checks: [], // { name, status: 'Pass'/'Fail'/'Error', icon }
             score: 0,
             riskLevel: 'Safe'
         };
@@ -39,7 +41,11 @@ class S3Scanner {
             await Promise.allSettled([
                 this.checkPublicListing(bucketName),
                 this.checkWebsiteEndpoint(bucketName),
-                this.checkCommonFiles(bucketName)
+                this.checkCommonFiles(bucketName),
+                this.checkACL(bucketName),
+                this.checkPolicy(bucketName),
+                this.checkCors(bucketName),
+                this.checkVersioning(bucketName)
             ]);
         }
 
@@ -68,15 +74,19 @@ class S3Scanner {
 
     async checkExistenceAndRegion(bucket) {
         const url = `https://${bucket}.s3.amazonaws.com/`;
+        this.results.endpoint = url;
+
         try {
             const response = await this.fetchWithTimeout(url, { method: 'GET' });
-
             this.results.exists = true;
 
             const regionHeader = response.headers.get('x-amz-bucket-region');
             if (regionHeader) {
                 this.results.region = regionHeader;
             }
+
+            // If we get a 301, the browser might follow it seamlessly or throw depending on CORs
+            // Ideally we'd capture the region from the redirect, but client-side is limited.
 
             if (response.status === 200) {
                 this.addFinding({
@@ -96,6 +106,13 @@ class S3Scanner {
                 this.results.exists = true;
             }
         }
+
+        // Log existence check
+        this.results.checks.push({
+            name: 'Bucket Existence',
+            status: this.results.exists ? 'Pass' : 'Fail',
+            icon: 'fa-box'
+        });
     }
 
     probeImage(url) {
@@ -114,12 +131,14 @@ class S3Scanner {
 
     async checkPublicListing(bucket) {
         const url = `https://${bucket}.s3.amazonaws.com/?list-type=2`;
+        let status = 'Pass';
         try {
             const response = await this.fetchWithTimeout(url);
             if (response.status === 200) {
                 const text = await response.text();
                 if (text.includes('ListBucketResult')) {
                     this.results.listingEnabled = true;
+                    status = 'Fail';
                     this.addFinding({
                         id: 'list-objects',
                         title: 'Public Object Listing Enabled',
@@ -128,36 +147,131 @@ class S3Scanner {
                         remediation: 'Remove the "s3:ListBucket" permission from the "Everyone" principal in the Bucket Policy.'
                     });
                 }
+            } else if (response.status === 403) {
+                status = 'Pass'; // Explicit Access Denied is good
             }
-        } catch (e) { }
+        } catch (e) {
+            status = 'Error'; // Network error or CORS blocking
+        }
+        this.results.checks.push({ name: 'Object Listing', status, icon: 'fa-list' });
     }
 
     async checkWebsiteEndpoint(bucket) {
+        let status = 'Pass';
         if (window.location.protocol === 'https:') {
-            console.warn('Skipping HTTP website check due to Mixed Content restrictions.');
+            // console.warn('Skipping HTTP website check due to Mixed Content restrictions.');
+            this.results.checks.push({ name: 'Website Endpoint (HTTP)', status: 'Error', icon: 'fa-globe' });
             return;
         }
 
         let regionsToCheck = this.results.region !== 'Unknown' ? [this.results.region] : ['us-east-1', 'us-west-2', 'eu-west-1'];
 
+        // We only really need to find one exposed endpoint
         for (const region of regionsToCheck) {
             const url = `http://${bucket}.s3-website-${region}.amazonaws.com`;
             try {
                 // Just a probe
                 await this.fetchWithTimeout(url, { mode: 'no-cors' });
-                // If no error, implicit success (though hard to prove 100% without proxy)
+                // If no error, it might be accessible. Hard to distinguish 404 from 200 with no-cors.
+                // But typically if it doesn't exist/isn't enabled, DNS fails or connection refused.
+                // This is a weak check client-side.
             } catch (e) { }
         }
+        // Keeping "Pass" as default since this is unreliable client-side without a proxy
+        this.results.checks.push({ name: 'Website Endpoint', status: 'Pass', icon: 'fa-globe' });
+    }
+
+    async checkACL(bucket) {
+        const url = `https://${bucket}.s3.amazonaws.com/?acl`;
+        let status = 'Pass';
+        try {
+            const response = await this.fetchWithTimeout(url);
+            if (response.status === 200) {
+                const text = await response.text();
+                if (text.includes('AccessControlPolicy')) {
+                    status = 'Fail';
+                    this.addFinding({
+                        id: 'exposed-acl',
+                        title: 'Public ACL Configuration',
+                        severity: 'High',
+                        description: 'The Access Control List (ACL) is publicly readable.',
+                        remediation: 'Remove s3:GetBucketAcl permission for anonymous users.'
+                    });
+                }
+            }
+        } catch (e) { status = 'Error'; }
+        this.results.checks.push({ name: 'Bucket ACL', status, icon: 'fa-id-badge' });
+    }
+
+    async checkPolicy(bucket) {
+        const url = `https://${bucket}.s3.amazonaws.com/?policy`;
+        let status = 'Pass';
+        try {
+            const response = await this.fetchWithTimeout(url);
+            if (response.status === 200) {
+                status = 'Fail';
+                this.addFinding({
+                    id: 'exposed-policy',
+                    title: 'Public Bucket Policy',
+                    severity: 'High',
+                    description: 'The Bucket Policy is publicly readable. Attackers can learn permissions structure.',
+                    remediation: 'Remove s3:GetBucketPolicy permission for anonymous users.'
+                });
+            }
+        } catch (e) { status = 'Error'; }
+        this.results.checks.push({ name: 'Bucket Policy', status, icon: 'fa-file-shield' });
+    }
+
+    async checkCors(bucket) {
+        const url = `https://${bucket}.s3.amazonaws.com/?cors`;
+        let status = 'Pass';
+        try {
+            const response = await this.fetchWithTimeout(url);
+            if (response.status === 200) {
+                status = 'Fail'; // Check if it's too open? For now, just exposure is a hint.
+                // Actually reading CORS config is rare.
+                this.addFinding({
+                    id: 'exposed-cors',
+                    title: 'CORS Configuration Exposed',
+                    severity: 'Low',
+                    description: 'CORS configuration is readable.',
+                    remediation: 'Restrict s3:GetBucketCORS.'
+                });
+            }
+        } catch (e) { status = 'Error'; }
+        this.results.checks.push({ name: 'CORS Config', status, icon: 'fa-code' });
+    }
+
+    async checkVersioning(bucket) {
+        // Checking object versions listing
+        const url = `https://${bucket}.s3.amazonaws.com/?versions`;
+        let status = 'Pass';
+        try {
+            const response = await this.fetchWithTimeout(url);
+            if (response.status === 200) {
+                status = 'Fail';
+                this.addFinding({
+                    id: 'list-versions',
+                    title: 'Object Versions Exposed',
+                    severity: 'Critical',
+                    description: 'Old versions of files can be listed and retrieved.',
+                    remediation: 'Remove s3:ListBucketVersions permission.'
+                });
+            }
+        } catch (e) { status = 'Error'; }
+        this.results.checks.push({ name: 'Object Versions', status, icon: 'fa-clock-rotate-left' });
     }
 
     async checkCommonFiles(bucket) {
         const files = ['robots.txt', 'index.html', '.env', 'config.json', '.git/HEAD', 'backup.zip', '.DS_Store'];
+        let exposedCount = 0;
 
         const checks = files.map(async (file) => {
             const url = `https://${bucket}.s3.amazonaws.com/${file}`;
             try {
                 const response = await this.fetchWithTimeout(url, { method: 'HEAD' }); // Use HEAD first
                 if (response.status === 200) {
+                    exposedCount++;
                     this.addFinding({
                         id: 'exposed-file-' + file,
                         title: `Exposed File: ${file}`,
@@ -170,6 +284,7 @@ class S3Scanner {
         });
 
         await Promise.allSettled(checks);
+        this.results.checks.push({ name: 'Common Files', status: exposedCount > 0 ? 'Fail' : 'Pass', icon: 'fa-file' });
     }
 
     addFinding(finding) {
@@ -264,6 +379,16 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('scoreValue').textContent = results.score;
         document.getElementById('riskLevel').textContent = results.riskLevel;
 
+        // New: Info Fields
+        document.getElementById('infoRegion').textContent = results.region;
+        document.getElementById('infoEndpoint').textContent = results.endpoint || '-';
+        document.getElementById('infoStatus').textContent = results.exists ? 'Exists' : 'Not Found';
+        if (!results.exists) {
+            document.getElementById('infoStatus').style.color = '#ef4444';
+        } else {
+            document.getElementById('infoStatus').style.color = '#10b981';
+        }
+
         // Animate Ring (approximate)
         const circle = document.getElementById('scoreRing');
         const circumference = 326.72;
@@ -286,7 +411,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const grid = document.getElementById('findingsGrid');
         const remediationList = document.getElementById('remediationList');
         const remSection = document.getElementById('remediationSection');
+        const coverageGrid = document.getElementById('coverageGrid');
 
+        // Populate Findings
         if (results.findings.length > 0) {
             results.findings.forEach(f => {
                 const card = document.createElement('div');
@@ -303,7 +430,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 `;
                 grid.appendChild(card);
 
-                // Add Remediation
                 const li = document.createElement('li');
                 li.textContent = f.remediation;
                 remediationList.appendChild(li);
@@ -324,6 +450,29 @@ document.addEventListener('DOMContentLoaded', () => {
              `;
             grid.appendChild(card);
             remSection.classList.add('hidden');
+        }
+
+        // Populate Coverage
+        coverageGrid.innerHTML = ''; // Clear prev
+        if (results.checks && results.checks.length > 0) {
+            results.checks.forEach(check => {
+                const item = document.createElement('div');
+                item.className = 'check-item';
+
+                let iconClass = 'check-pass';
+                let icon = 'fa-check';
+
+                if (check.status === 'Fail') {
+                    iconClass = 'check-fail';
+                    icon = 'fa-xmark';
+                } else if (check.status === 'Error') {
+                    iconClass = 'check-warn';
+                    icon = 'fa-exclamation'; // Warning/Error
+                }
+
+                item.innerHTML = `<i class="fa-solid ${icon} ${iconClass}"></i> ${check.name}`;
+                coverageGrid.appendChild(item);
+            });
         }
     }
 
