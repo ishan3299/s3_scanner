@@ -1,22 +1,104 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>S3 Misconfiguration Scanner</title>
     <meta name="description" content="A safe, client-side S3 bucket misconfiguration scanner.">
-    
+
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+
     <!-- Styles -->
     <link rel="stylesheet" href="assets/css/style.css">
-    
+    <style>
+        /* Inline styles for new features (quick implementation) */
+        .bucket-info-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .bucket-info-card h4 {
+            margin-top: 0;
+            margin-bottom: 0.5rem;
+            color: #64748b;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+        }
+
+        .info-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .info-item .label {
+            font-size: 0.8rem;
+            color: #94a3b8;
+        }
+
+        .info-item .value {
+            font-weight: 500;
+            color: #0f172a;
+            word-break: break-all;
+        }
+
+        .coverage-section {
+            margin-top: 2rem;
+            padding-top: 2rem;
+            border-top: 1px solid #e2e8f0;
+        }
+
+        .coverage-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 0.8rem;
+            margin-top: 1rem;
+        }
+
+        .check-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.9rem;
+            color: #475569;
+        }
+
+        .check-item i {
+            font-size: 0.8rem;
+        }
+
+        .check-pass {
+            color: #10b981;
+        }
+
+        .check-fail {
+            color: #ef4444;
+        }
+
+        .check-warn {
+            color: #f59e0b;
+        }
+    </style>
+
     <!-- Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
+
 <body>
     <div class="app-container">
         <header>
@@ -34,12 +116,14 @@
         <main>
             <section class="hero">
                 <h2>Secure Your Buckets</h2>
-                <p>Detect public S3 bucket misconfigurations safely and instantly. Client-side processing ensures your data never leaves your browser.</p>
+                <p>Detect public S3 bucket misconfigurations safely and instantly. Client-side processing ensures your
+                    data never leaves your browser.</p>
             </section>
 
             <section class="scanner-interface">
                 <div class="input-group">
-                    <input type="text" id="bucketInput" placeholder="Enter Bucket Name or URL (e.g., my-bucket)" autocomplete="off">
+                    <input type="text" id="bucketInput" placeholder="Enter Bucket Name or URL (e.g., my-bucket)"
+                        autocomplete="off">
                     <button id="scanBtn">
                         <span class="btn-text">Scan Bucket</span>
                         <div class="spinner hidden"></div>
@@ -52,15 +136,37 @@
                 <div class="results-header">
                     <h3>Scan Results: <span id="targetBucketName"></span></h3>
                     <div class="actions">
-                        <button id="exportBtn" class="secondary-btn"><i class="fa-solid fa-download"></i> Export Report</button>
+                        <button id="exportBtn" class="secondary-btn"><i class="fa-solid fa-download"></i> Export
+                            Report</button>
                     </div>
                 </div>
-                
+
+                <!-- NEW: Bucket Info Section -->
+                <div class="bucket-info-card">
+                    <h4>Bucket Information</h4>
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <span class="label">Region:</span>
+                            <span id="infoRegion" class="value">Unknown</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="label">Endpoint:</span>
+                            <span id="infoEndpoint" class="value">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="label">Status:</span>
+                            <span id="infoStatus" class="value">Checking...</span>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="score-card">
                     <div class="score-circle-container">
                         <svg class="score-ring" width="120" height="120">
-                            <circle class="score-ring-bg" stroke="#334155" stroke-width="8" fill="transparent" r="52" cx="60" cy="60"/>
-                            <circle id="scoreRing" class="score-ring-fill" stroke="#10b981" stroke-width="8" fill="transparent" r="52" cx="60" cy="60"/>
+                            <circle class="score-ring-bg" stroke="#334155" stroke-width="8" fill="transparent" r="52"
+                                cx="60" cy="60" />
+                            <circle id="scoreRing" class="score-ring-fill" stroke="#10b981" stroke-width="8"
+                                fill="transparent" r="52" cx="60" cy="60" />
                         </svg>
                         <div class="score-value">
                             <span id="scoreValue">0</span>
@@ -76,7 +182,15 @@
                 <div class="findings-grid" id="findingsGrid">
                     <!-- Findings injected by JS -->
                 </div>
-                
+
+                <!-- NEW: Scan Coverage Section -->
+                <div class="coverage-section">
+                    <h4><i class="fa-solid fa-clipboard-check"></i> Check List</h4>
+                    <div class="coverage-grid" id="coverageGrid">
+                        <!-- Checks injected by JS -->
+                    </div>
+                </div>
+
                 <div id="remediationSection" class="remediation-section hidden">
                     <h4><i class="fa-solid fa-shield-halved"></i> Remediation Recommendations</h4>
                     <ul id="remediationList">
@@ -88,7 +202,7 @@
 
         <footer>
             <p>
-                <strong>Disclaimer:</strong> This tool is for educational and authorized testing purposes only. 
+                <strong>Disclaimer:</strong> This tool is for educational and authorized testing purposes only.
                 Do not scan buckets you do not own or have permission to test.
             </p>
             <p>Created with <i class="fa-solid fa-heart" style="color: #e11d48;"></i> by Ishan Patel</p>
@@ -99,4 +213,5 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="assets/js/scanner.js"></script>
 </body>
+
 </html>
