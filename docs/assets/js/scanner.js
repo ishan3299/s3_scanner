@@ -150,20 +150,6 @@ class S3Scanner {
         });
     }
 
-    probeImage(url) {
-        return new Promise((resolve) => {
-            const img = new Image();
-            const timer = setTimeout(() => {
-                img.src = ""; // Stop loading
-                resolve(false);
-            }, TIMEOUT_MS);
-
-            img.onload = () => { clearTimeout(timer); resolve(true); };
-            img.onerror = () => { clearTimeout(timer); resolve(false); };
-            img.src = url + 'favicon.ico';
-        });
-    }
-
     async checkPublicListing(bucket) {
         const url = `https://${bucket}.s3.amazonaws.com/?list-type=2`;
         let status = 'Pass';

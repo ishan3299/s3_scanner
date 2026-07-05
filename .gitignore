@@ -1,1 +1,18 @@
+# Local scan results and report files
+docs/scan_report.json
+docs/assets/js/report_data.js
+
+# Python cache files
+__pycache__/
+**/__pycache__/
+*.pyc
+
+# Local environments
+.venv/
+venv/
+env/
+.env
+
+# Misc
+.DS_Store
 instructions.txt
