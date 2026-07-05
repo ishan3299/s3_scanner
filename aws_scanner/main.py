@@ -2,6 +2,8 @@
 import argparse
 import json
 import sys
+import os
+import webbrowser
 from datetime import datetime, timezone
 import boto3
 
@@ -33,11 +35,45 @@ def main():
     args = parser.parse_args()
 
     print("[*] Initializing AWS Vulnerability Scanner...")
+    
+    # Check if valid AWS credentials can be automatically loaded
     try:
-        session = boto3.Session(profile_name=args.profile, region_name=args.region)
-    except Exception as e:
-        print(f"[-] Error initializing AWS session: {e}", file=sys.stderr)
-        sys.exit(1)
+        temp_session = boto3.Session(profile_name=args.profile, region_name=args.region)
+        # Force a call to verify credentials
+        temp_session.client('sts').get_caller_identity()
+        session = temp_session
+        print("[+] AWS Credentials loaded successfully from environment/profile.")
+    except Exception:
+        print("[-] No valid AWS credentials found in environment or default CLI profile.")
+        print("[*] Please configure credentials below to run the scan locally:")
+        access_key = input("    AWS Access Key ID: ").strip()
+        if not access_key:
+            print("[-] No keys provided. Exiting.")
+            sys.exit(1)
+        secret_key = input("    AWS Secret Access Key: ").strip()
+        region = input("    AWS Region [us-east-1]: ").strip() or "us-east-1"
+        session_token = input("    AWS Session Token (Optional - press Enter to skip): ").strip()
+        
+        try:
+            if session_token:
+                session = boto3.Session(
+                    aws_access_key_id=access_key,
+                    aws_secret_access_key=secret_key,
+                    aws_session_token=session_token,
+                    region_name=region
+                )
+            else:
+                session = boto3.Session(
+                    aws_access_key_id=access_key,
+                    aws_secret_access_key=secret_key,
+                    region_name=region
+                )
+            # Verify credentials immediately
+            session.client('sts').get_caller_identity()
+            print("[+] AWS Credentials validated successfully.")
+        except Exception as e:
+            print(f"[-] Invalid AWS credentials: {e}", file=sys.stderr)
+            sys.exit(1)
 
     # Instantiate auditors
     auditors = {
@@ -78,7 +114,7 @@ def main():
     
     report = {
         "scan_time": datetime.now(timezone.utc).isoformat(),
-        "account_id": "unknown",  # We will resolve this below
+        "account_id": "unknown",
         "risk_score": risk_score,
         "summary": {
             "total_findings": len(all_findings),
@@ -94,13 +130,24 @@ def main():
     except Exception:
         pass
 
-    # Save to file
+    # Save JSON report
     try:
+        os.makedirs(os.path.dirname(args.output), exist_ok=True)
         with open(args.output, 'w') as f:
             json.dump(report, f, indent=2, default=str)
         print(f"[+] Scan report written to {args.output}")
     except Exception as e:
         print(f"[-] Failed to write scan report file: {e}", file=sys.stderr)
+
+    # Save as JS file for local CORS-free HTML loading (essential for offline file://)
+    js_output_path = os.path.join(os.path.dirname(args.output), "assets", "js", "report_data.js")
+    try:
+        os.makedirs(os.path.dirname(js_output_path), exist_ok=True)
+        with open(js_output_path, 'w') as f:
+            f.write(f"window.AWS_SCAN_REPORT = {json.dumps(report, indent=2, default=str)};")
+        print(f"[+] Local offline report data saved to {js_output_path}")
+    except Exception as e:
+        print(f"[-] Failed to write JS report data: {e}", file=sys.stderr)
 
     # Console Summary Output
     print("\n" + "="*50)
@@ -115,12 +162,15 @@ def main():
     print(f"  - Low:      {severity_counts['Low']}")
     print("="*50)
 
-    # Exit with code 1 if critical or high findings exist to flag builds
+    # Automatically open local HTML report in default browser
+    html_report_path = os.path.abspath(os.path.join(os.path.dirname(args.output), "index.html"))
+    if os.path.exists(html_report_path):
+        print(f"[*] Opening local dashboard: file://{html_report_path}")
+        webbrowser.open(f"file://{html_report_path}")
+
+    # Exit code
     if severity_counts['Critical'] > 0 or severity_counts['High'] > 0:
-        print("[-] Security check failed: Critical or High findings detected.", file=sys.stderr)
         sys.exit(1)
-    
-    print("[+] Security check passed.")
     sys.exit(0)
 
 if __name__ == "__main__":

@@ -641,6 +641,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- AWS Security Dashboard Logic ---
     async function loadScanReport() {
+        // If local offline report is loaded via report_data.js script
+        if (window.AWS_SCAN_REPORT) {
+            console.log("Loaded offline report from report_data.js");
+            renderDashboard(window.AWS_SCAN_REPORT);
+            return;
+        }
+
         try {
             const response = await fetch('scan_report.json');
             if (!response.ok) throw new Error('Report file not found');
@@ -821,4 +828,9 @@ document.addEventListener('DOMContentLoaded', () => {
             renderDashboardFindings();
         });
     });
+
+    // If an offline report is baked in, immediately show the dashboard tab on load
+    if (window.AWS_SCAN_REPORT) {
+        switchTab('AWS');
+    }
 });

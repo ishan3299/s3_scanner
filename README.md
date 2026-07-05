@@ -24,8 +24,8 @@ A safe, client-side S3 bucket misconfiguration scanner designed to help security
 3. Click **Scan Bucket**.
 4. Review the findings and download the PDF report.
 
-### Authenticated Deep Scan (CLI)
-For bucket owners who want to check permissions (ACLs, Policies) that are not visible publicly:
+### Local All-in-One AWS Vulnerability Scan (CLI)
+For users who want to audit their AWS cloud environment (S3, IAM, EC2, RDS, CloudTrail) locally and offline:
 
 1. Clone the repository.
    ```bash
@@ -36,19 +36,15 @@ For bucket owners who want to check permissions (ACLs, Policies) that are not vi
    ```bash
    pip install -r scripts/requirements.txt
    ```
-3. Configure AWS credentials (`aws configure` or env vars).
-4. Run the helper script:
+3. Run the scanner:
    ```bash
-   python scripts/owner_scan_helper.py my-bucket-name
-   # Or with a specific profile
-   python scripts/owner_scan_helper.py my-bucket-name --profile my-aws-profile
-   # JSON output for CI/CD
-   python scripts/owner_scan_helper.py my-bucket-name --json
+   python3 scripts/aws_vulnerability_scanner.py
    ```
-
-### GitHub Actions Integration
-You can run the authenticated scan automatically in your CI/CD pipeline using the provided template.
-Copy `templates/github-actions-owner-scan.yml.template` to `.github/workflows/s3-scan.yml` and configure the secrets.
+   * If you have credentials configured on your machine (via AWS CLI `aws configure` or environment variables), the tool will load them automatically.
+   * If no credentials are found, the tool will **interactively prompt** you to enter your Access Key ID, Secret Access Key, and Region safely.
+4. Review the results:
+   * The scan results will print directly to the terminal.
+   * The tool will automatically generate `docs/assets/js/report_data.js` and launch the local HTML report (`docs/index.html`) in your default web browser to display your findings in the dashboard.
 
 ## Community & Contributing
 
