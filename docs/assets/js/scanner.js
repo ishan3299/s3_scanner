@@ -556,6 +556,35 @@ document.addEventListener('DOMContentLoaded', () => {
                 coverageGrid.appendChild(item);
             });
         }
+
+        // Dynamically update the AWS Security Dashboard tab with this S3 bucket's findings
+        const s3DashboardFindings = results.findings.map(f => ({
+            service: 'S3',
+            resource: results.bucketName,
+            id: f.id,
+            severity: f.severity,
+            title: f.title,
+            description: f.description,
+            remediation: f.remediation
+        }));
+
+        const s3Report = {
+            scan_time: new Date().toISOString(),
+            account_id: `Bucket: ${results.bucketName}`,
+            risk_score: results.score,
+            summary: {
+                total_findings: s3DashboardFindings.length,
+                severity_counts: {
+                    Critical: s3DashboardFindings.filter(f => f.severity === 'Critical').length,
+                    High: s3DashboardFindings.filter(f => f.severity === 'High').length,
+                    Medium: s3DashboardFindings.filter(f => f.severity === 'Medium').length,
+                    Low: s3DashboardFindings.filter(f => f.severity === 'Low').length
+                }
+            },
+            findings: s3DashboardFindings
+        };
+
+        renderDashboard(s3Report);
     }
 
     function generatePDF() {
