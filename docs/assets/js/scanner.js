@@ -72,21 +72,59 @@ class S3Scanner {
         }
     }
 
+    async fetchViaProxy(url, options = {}) {
+        // Use allorigins.win JSON wrapper endpoint to get status code and headers
+        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+        const response = await this.fetchWithTimeout(proxyUrl, { method: 'GET' });
+        if (!response.ok) {
+            throw new Error(`Proxy error: ${response.statusText}`);
+        }
+        const data = await response.json();
+        const httpCode = data.status?.http_code || 500;
+        
+        // Reconstruct response-like object
+        return {
+            status: httpCode,
+            ok: httpCode >= 200 && httpCode < 300,
+            text: async () => data.contents || '',
+            headers: {
+                get: (headerName) => {
+                    const headers = data.status?.response_headers || {};
+                    // Look up case-insensitively since header keys can vary
+                    const key = Object.keys(headers).find(k => k.toLowerCase() === headerName.toLowerCase());
+                    return key ? headers[key] : null;
+                }
+            }
+        };
+    }
+
+    async fetchWithFallback(url, options = {}) {
+        try {
+            // Try standard fetch first (fast, direct, preserves credentials if any)
+            return await this.fetchWithTimeout(url, options);
+        } catch (error) {
+            // Fallback to CORS proxy
+            console.log(`Direct fetch failed for ${url} (likely CORS). Retrying via proxy...`);
+            return await this.fetchViaProxy(url, options);
+        }
+    }
+
     async checkExistenceAndRegion(bucket) {
         const url = `https://${bucket}.s3.amazonaws.com/`;
         this.results.endpoint = url;
 
         try {
-            const response = await this.fetchWithTimeout(url, { method: 'GET' });
-            this.results.exists = true;
+            const response = await this.fetchWithFallback(url, { method: 'GET' });
+            
+            // A bucket exists if the status is not a 404
+            if (response.status !== 404) {
+                this.results.exists = true;
+            }
 
             const regionHeader = response.headers.get('x-amz-bucket-region');
             if (regionHeader) {
                 this.results.region = regionHeader;
             }
-
-            // If we get a 301, the browser might follow it seamlessly or throw depending on CORs
-            // Ideally we'd capture the region from the redirect, but client-side is limited.
 
             if (response.status === 200) {
                 this.addFinding({
@@ -100,11 +138,8 @@ class S3Scanner {
                 this.results.corsOpen = true;
             }
         } catch (error) {
-            // If CORS fails or timeout, we try an image probe to confirm existence
-            const imgExists = await this.probeImage(url);
-            if (imgExists) {
-                this.results.exists = true;
-            }
+            // If even proxy fails (e.g. invalid bucket name that fails DNS)
+            this.results.exists = false;
         }
 
         // Log existence check
@@ -133,7 +168,7 @@ class S3Scanner {
         const url = `https://${bucket}.s3.amazonaws.com/?list-type=2`;
         let status = 'Pass';
         try {
-            const response = await this.fetchWithTimeout(url);
+            const response = await this.fetchWithFallback(url);
             if (response.status === 200) {
                 const text = await response.text();
                 if (text.includes('ListBucketResult')) {
@@ -158,34 +193,35 @@ class S3Scanner {
 
     async checkWebsiteEndpoint(bucket) {
         let status = 'Pass';
-        if (window.location.protocol === 'https:') {
-            // console.warn('Skipping HTTP website check due to Mixed Content restrictions.');
-            this.results.checks.push({ name: 'Website Endpoint (HTTP)', status: 'Error', icon: 'fa-globe' });
-            return;
-        }
-
         let regionsToCheck = this.results.region !== 'Unknown' ? [this.results.region] : ['us-east-1', 'us-west-2', 'eu-west-1'];
 
         // We only really need to find one exposed endpoint
         for (const region of regionsToCheck) {
             const url = `http://${bucket}.s3-website-${region}.amazonaws.com`;
             try {
-                // Just a probe
-                await this.fetchWithTimeout(url, { mode: 'no-cors' });
-                // If no error, it might be accessible. Hard to distinguish 404 from 200 with no-cors.
-                // But typically if it doesn't exist/isn't enabled, DNS fails or connection refused.
-                // This is a weak check client-side.
+                const response = await this.fetchWithFallback(url);
+                if (response.status === 200) {
+                    status = 'Fail';
+                    this.results.websiteEnabled = true;
+                    this.addFinding({
+                        id: 'website-endpoint',
+                        title: 'Website Hosting Enabled',
+                        severity: 'Low',
+                        description: `The S3 website hosting endpoint is publicly accessible at ${url}`,
+                        remediation: 'Disable static website hosting if the bucket is only used for object storage.'
+                    });
+                    break;
+                }
             } catch (e) { }
         }
-        // Keeping "Pass" as default since this is unreliable client-side without a proxy
-        this.results.checks.push({ name: 'Website Endpoint', status: 'Pass', icon: 'fa-globe' });
+        this.results.checks.push({ name: 'Website Endpoint', status, icon: 'fa-globe' });
     }
 
     async checkACL(bucket) {
         const url = `https://${bucket}.s3.amazonaws.com/?acl`;
         let status = 'Pass';
         try {
-            const response = await this.fetchWithTimeout(url);
+            const response = await this.fetchWithFallback(url);
             if (response.status === 200) {
                 const text = await response.text();
                 if (text.includes('AccessControlPolicy')) {
@@ -207,7 +243,7 @@ class S3Scanner {
         const url = `https://${bucket}.s3.amazonaws.com/?policy`;
         let status = 'Pass';
         try {
-            const response = await this.fetchWithTimeout(url);
+            const response = await this.fetchWithFallback(url);
             if (response.status === 200) {
                 status = 'Fail';
                 this.addFinding({
@@ -226,7 +262,7 @@ class S3Scanner {
         const url = `https://${bucket}.s3.amazonaws.com/?cors`;
         let status = 'Pass';
         try {
-            const response = await this.fetchWithTimeout(url);
+            const response = await this.fetchWithFallback(url);
             if (response.status === 200) {
                 status = 'Fail'; // Check if it's too open? For now, just exposure is a hint.
                 // Actually reading CORS config is rare.
@@ -247,7 +283,7 @@ class S3Scanner {
         const url = `https://${bucket}.s3.amazonaws.com/?versions`;
         let status = 'Pass';
         try {
-            const response = await this.fetchWithTimeout(url);
+            const response = await this.fetchWithFallback(url);
             if (response.status === 200) {
                 status = 'Fail';
                 this.addFinding({
@@ -269,7 +305,7 @@ class S3Scanner {
         const checks = files.map(async (file) => {
             const url = `https://${bucket}.s3.amazonaws.com/${file}`;
             try {
-                const response = await this.fetchWithTimeout(url, { method: 'HEAD' }); // Use HEAD first
+                const response = await this.fetchWithFallback(url, { method: 'HEAD' }); // Use HEAD first
                 if (response.status === 200) {
                     exposedCount++;
                     this.addFinding({
@@ -319,6 +355,14 @@ class S3Scanner {
 // UI Controller
 document.addEventListener('DOMContentLoaded', () => {
     const scanner = new S3Scanner();
+    
+    // Tab Elements
+    const s3ScannerTabBtn = document.getElementById('s3ScannerTabBtn');
+    const awsDashboardTabBtn = document.getElementById('awsDashboardTabBtn');
+    const s3ScannerTabContent = document.getElementById('s3ScannerTabContent');
+    const awsDashboardTabContent = document.getElementById('awsDashboardTabContent');
+
+    // S3 Scanner Elements
     const scanBtn = document.getElementById('scanBtn');
     const bucketInput = document.getElementById('bucketInput');
     const resultsSection = document.getElementById('resultsSection');
@@ -326,11 +370,54 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnText = document.querySelector('.btn-text');
     const exportBtn = document.getElementById('exportBtn');
 
+    // Dashboard Elements
+    const dashboardNoReport = document.getElementById('dashboardNoReport');
+    const dashboardContent = document.getElementById('dashboardContent');
+    const demoReportBtn = document.getElementById('demoReportBtn');
+    const dashAccountId = document.getElementById('dashAccountId');
+    const dashLastAudited = document.getElementById('dashLastAudited');
+    const dashRiskStatus = document.getElementById('dashRiskStatus');
+    const dashScoreValue = document.getElementById('dashScoreValue');
+    const dashRiskLevel = document.getElementById('dashRiskLevel');
+    const dashRiskSummary = document.getElementById('dashRiskSummary');
+    const dashScoreRing = document.getElementById('dashScoreRing');
+    const countCritical = document.getElementById('countCritical');
+    const countHigh = document.getElementById('countHigh');
+    const countMedium = document.getElementById('countMedium');
+    const countLow = document.getElementById('countLow');
+    const dashboardFindingsList = document.getElementById('dashboardFindingsList');
+
+    let loadedReport = null;
+    let activeServiceFilter = 'ALL';
+
+    // Tab Navigation Logic
+    s3ScannerTabBtn.addEventListener('click', () => switchTab('S3'));
+    awsDashboardTabBtn.addEventListener('click', () => switchTab('AWS'));
+
+    function switchTab(tab) {
+        if (tab === 'S3') {
+            s3ScannerTabBtn.classList.add('active');
+            awsDashboardTabBtn.classList.remove('active');
+            s3ScannerTabContent.classList.remove('hidden');
+            awsDashboardTabContent.classList.add('hidden');
+        } else {
+            awsDashboardTabBtn.classList.add('active');
+            s3ScannerTabBtn.classList.remove('active');
+            awsDashboardTabContent.classList.remove('hidden');
+            s3ScannerTabContent.classList.add('hidden');
+            
+            // Try to load scan report if not already loaded
+            if (!loadedReport) {
+                loadScanReport();
+            }
+        }
+    }
+
+    // S3 Scanner Events
     scanBtn.addEventListener('click', handleScan);
     bucketInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') handleScan();
     });
-
     exportBtn.addEventListener('click', generatePDF);
 
     async function handleScan() {
@@ -350,7 +437,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (bucket.includes('://')) {
             try {
                 const urlObj = new URL(bucket);
-                // Handle subdomains like bucket.s3.amazonaws.com
                 if (urlObj.hostname.includes('.s3')) {
                     const parts = urlObj.hostname.split('.s3');
                     cleanBucket = parts[0];
@@ -379,7 +465,6 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('scoreValue').textContent = results.score;
         document.getElementById('riskLevel').textContent = results.riskLevel;
 
-        // New: Info Fields
         document.getElementById('infoRegion').textContent = results.region;
         document.getElementById('infoEndpoint').textContent = results.endpoint || '-';
         document.getElementById('infoStatus').textContent = results.exists ? 'Exists' : 'Not Found';
@@ -389,16 +474,14 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('infoStatus').style.color = '#10b981';
         }
 
-        // Animate Ring (approximate)
         const circle = document.getElementById('scoreRing');
         const circumference = 326.72;
         const offset = circumference - (results.score / 100) * circumference;
         circle.style.strokeDashoffset = offset;
 
-        // Color
-        let color = '#10b981'; // green
-        if (results.score > 29) color = '#f59e0b'; // orange
-        if (results.score > 69) color = '#e11d48'; // red
+        let color = '#10b981';
+        if (results.score > 29) color = '#f59e0b';
+        if (results.score > 69) color = '#e11d48';
         circle.style.stroke = color;
         document.getElementById('riskLevel').style.color = color;
 
@@ -413,7 +496,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const remSection = document.getElementById('remediationSection');
         const coverageGrid = document.getElementById('coverageGrid');
 
-        // Populate Findings
         if (results.findings.length > 0) {
             results.findings.forEach(f => {
                 const card = document.createElement('div');
@@ -452,8 +534,8 @@ document.addEventListener('DOMContentLoaded', () => {
             remSection.classList.add('hidden');
         }
 
-        // Populate Coverage
-        coverageGrid.innerHTML = ''; // Clear prev
+        // Coverage Grid
+        coverageGrid.innerHTML = '';
         if (results.checks && results.checks.length > 0) {
             results.checks.forEach(check => {
                 const item = document.createElement('div');
@@ -467,7 +549,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     icon = 'fa-xmark';
                 } else if (check.status === 'Error') {
                     iconClass = 'check-warn';
-                    icon = 'fa-exclamation'; // Warning/Error
+                    icon = 'fa-exclamation';
                 }
 
                 item.innerHTML = `<i class="fa-solid ${icon} ${iconClass}"></i> ${check.name}`;
@@ -527,4 +609,187 @@ document.addEventListener('DOMContentLoaded', () => {
 
         doc.save(`${name}_scan_report.pdf`);
     }
+
+    // --- AWS Security Dashboard Logic ---
+    async function loadScanReport() {
+        try {
+            const response = await fetch('scan_report.json');
+            if (!response.ok) throw new Error('Report file not found');
+            const data = await response.json();
+            renderDashboard(data);
+        } catch (error) {
+            console.log("No report JSON found, prompting user.");
+            dashboardNoReport.classList.remove('hidden');
+            dashboardContent.classList.add('hidden');
+        }
+    }
+
+    demoReportBtn.addEventListener('click', () => {
+        const demoData = {
+            "scan_time": new Date().toISOString(),
+            "account_id": "123456789012",
+            "risk_score": 48,
+            "summary": {
+                "total_findings": 5,
+                "severity_counts": {
+                    "Critical": 1,
+                    "High": 1,
+                    "Medium": 2,
+                    "Low": 1
+                }
+            },
+            "findings": [
+                {
+                    "service": "IAM",
+                    "resource": "Root Account",
+                    "id": "iam-root-no-mfa",
+                    "severity": "Critical",
+                    "title": "MFA Not Enabled on Root Account",
+                    "description": "The root user of this AWS account does not have Multi-Factor Authentication (MFA) enabled.",
+                    "remediation": "Log in as the root user and configure a virtual or physical MFA device immediately."
+                },
+                {
+                    "service": "EC2",
+                    "resource": "Security Group: sg-08df1f885a06 (default)",
+                    "id": "ec2-sg-port-22-public",
+                    "severity": "High",
+                    "title": "Sensitive Port Publicly Accessible: SSH (22)",
+                    "description": "Security Group 'sg-08df1f885a06' exposes sensitive port 22 (SSH) to public access (0.0.0.0/0).",
+                    "remediation": "Limit traffic on port 22 to authorized office IPs or use AWS Systems Manager Session Manager for remote access."
+                },
+                {
+                    "service": "S3",
+                    "resource": "my-logs-bucket-unencrypted",
+                    "id": "s3-unencrypted",
+                    "severity": "Medium",
+                    "title": "Server-Side Encryption Disabled",
+                    "description": "Default encryption is not configured for bucket 'my-logs-bucket-unencrypted'. Objects might be stored unencrypted.",
+                    "remediation": "Enable S3 default encryption using SSE-S3 (AES-256) or SSE-KMS."
+                },
+                {
+                    "service": "RDS",
+                    "resource": "DB Instance: prod-postgres",
+                    "id": "rds-backups-disabled",
+                    "severity": "Medium",
+                    "title": "RDS Backups Disabled",
+                    "description": "Automated backups are disabled for the database instance 'prod-postgres' (retention period set to 0).",
+                    "remediation": "Configure an automated backup retention period greater than 0 days (e.g. 7 or 30 days) to prevent data loss."
+                },
+                {
+                    "service": "CloudTrail",
+                    "resource": "Trail: primary-trail",
+                    "id": "cloudtrail-not-multi-region",
+                    "severity": "Low",
+                    "title": "Trail is Single-Region Only",
+                    "description": "The trail 'primary-trail' only logs events in its home region.",
+                    "remediation": "Update the trail configuration to be a Multi-Region Trail."
+                }
+            ]
+        };
+        renderDashboard(demoData);
+    });
+
+    function renderDashboard(report) {
+        loadedReport = report;
+        dashboardNoReport.classList.add('hidden');
+        dashboardContent.classList.remove('hidden');
+
+        // Set Metadata
+        dashAccountId.textContent = report.account_id || 'Unknown';
+        dashLastAudited.textContent = new Date(report.scan_time).toLocaleString();
+        
+        let status = 'Secure';
+        let color = '#10b981';
+        if (report.risk_score > 0) {
+            status = 'Warning';
+            color = '#f59e0b';
+        }
+        if (report.risk_score > 69) {
+            status = 'Critical';
+            color = '#e11d48';
+        }
+        dashRiskStatus.textContent = status;
+        dashRiskStatus.style.color = color;
+
+        // Score Ring
+        dashScoreValue.textContent = report.risk_score;
+        let riskLevelText = 'Safe';
+        let summaryText = 'All audited services configured securely.';
+        if (report.risk_score > 0) riskLevelText = 'Low Risk';
+        if (report.risk_score > 30) riskLevelText = 'Medium Risk';
+        if (report.risk_score > 69) riskLevelText = 'Critical Risk';
+        
+        if (report.findings.length > 0) {
+            summaryText = `Auditor detected ${report.findings.length} configuration vulnerabilities.`;
+        }
+
+        dashRiskLevel.textContent = riskLevelText;
+        dashRiskLevel.style.color = color;
+        dashRiskSummary.textContent = summaryText;
+
+        const circumference = 326.72;
+        const offset = circumference - (report.risk_score / 100) * circumference;
+        dashScoreRing.style.strokeDashoffset = offset;
+        dashScoreRing.style.stroke = color;
+
+        // Metric Counts
+        countCritical.textContent = report.summary?.severity_counts?.Critical ?? 0;
+        countHigh.textContent = report.summary?.severity_counts?.High ?? 0;
+        countMedium.textContent = report.summary?.severity_counts?.Medium ?? 0;
+        countLow.textContent = report.summary?.severity_counts?.Low ?? 0;
+
+        // Render Findings List
+        renderDashboardFindings();
+    }
+
+    function renderDashboardFindings() {
+        if (!loadedReport) return;
+        dashboardFindingsList.innerHTML = '';
+
+        const filtered = loadedReport.findings.filter(f => {
+            if (activeServiceFilter === 'ALL') return true;
+            return f.service.toUpperCase() === activeServiceFilter.toUpperCase();
+        });
+
+        if (filtered.length === 0) {
+            dashboardFindingsList.innerHTML = `
+                <div class="no-report-card" style="padding: 2rem;">
+                    <i class="fa-solid fa-square-check" style="color: #10b981; font-size: 2.5rem;"></i>
+                    <h4>No Findings for ${activeServiceFilter}</h4>
+                    <p style="margin-bottom:0;">Everything is configured securely in this category.</p>
+                </div>
+            `;
+            return;
+        }
+
+        filtered.forEach(f => {
+            const item = document.createElement('div');
+            item.className = 'dashboard-finding-item';
+            item.innerHTML = `
+                <div class="finding-meta">
+                    <span class="finding-service-badge"><i class="fa-solid fa-server"></i> ${f.service}</span>
+                    <span class="finding-badge badge-${f.severity.toLowerCase()}">${f.severity}</span>
+                </div>
+                <h4 style="margin-bottom: 0.5rem;">${f.title}</h4>
+                <div class="finding-resource">Resource: <code>${f.resource}</code></div>
+                <p style="color: var(--text-secondary); font-size: 0.95rem; margin-bottom: 0.75rem;">${f.description}</p>
+                <div class="finding-remediation-box">
+                    <strong><i class="fa-solid fa-wrench"></i> Remediation Action</strong>
+                    ${f.remediation}
+                </div>
+            `;
+            dashboardFindingsList.appendChild(item);
+        });
+    }
+
+    // Set up filter click handlers
+    const filterButtons = document.querySelectorAll('.filter-btn');
+    filterButtons.forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            filterButtons.forEach(b => b.classList.remove('active'));
+            e.target.classList.add('active');
+            activeServiceFilter = e.target.dataset.service;
+            renderDashboardFindings();
+        });
+    });
 });

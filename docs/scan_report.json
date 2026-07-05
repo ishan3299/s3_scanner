@@ -1,0 +1,56 @@
+{
+  "scan_time": "2026-07-05T10:09:30.788034+00:00",
+  "account_id": "unknown",
+  "risk_score": 75,
+  "summary": {
+    "total_findings": 5,
+    "severity_counts": {
+      "Critical": 0,
+      "High": 5,
+      "Medium": 0,
+      "Low": 0
+    }
+  },
+  "findings": [
+    {
+      "service": "S3",
+      "id": "s3-global-scan-error",
+      "severity": "High",
+      "title": "Failed to Audit S3",
+      "description": "Unable to locate credentials",
+      "remediation": "Check IAM permissions and network connectivity."
+    },
+    {
+      "service": "IAM",
+      "id": "iam-global-scan-error",
+      "severity": "High",
+      "title": "Failed to Audit IAM",
+      "description": "Unable to locate credentials",
+      "remediation": "Check IAM permissions and network connectivity."
+    },
+    {
+      "service": "EC2",
+      "id": "ec2-global-scan-error",
+      "severity": "High",
+      "title": "Failed to Audit EC2",
+      "description": "Unable to locate credentials",
+      "remediation": "Check IAM permissions and network connectivity."
+    },
+    {
+      "service": "RDS",
+      "id": "rds-global-scan-error",
+      "severity": "High",
+      "title": "Failed to Audit RDS",
+      "description": "Unable to locate credentials",
+      "remediation": "Check IAM permissions and network connectivity."
+    },
+    {
+      "service": "CloudTrail",
+      "id": "cloudtrail-global-scan-error",
+      "severity": "High",
+      "title": "Failed to Audit CloudTrail",
+      "description": "Unable to locate credentials",
+      "remediation": "Check IAM permissions and network connectivity."
+    }
+  ]
+}

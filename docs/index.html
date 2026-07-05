@@ -104,7 +104,7 @@
         <header>
             <div class="logo">
                 <i class="fa-brands fa-aws"></i>
-                <h1>S3 Scanner</h1>
+                <h1>AWS Security Scanner</h1>
             </div>
             <nav>
                 <a href="https://github.com/ishan3299/s3_scanner" target="_blank" class="github-link">
@@ -113,97 +113,198 @@
             </nav>
         </header>
 
+        <!-- Tabs Navigation -->
+        <div class="tabs-nav">
+            <button id="s3ScannerTabBtn" class="tab-btn active">
+                <i class="fa-solid fa-satellite-dish"></i> S3 Client Scan
+            </button>
+            <button id="awsDashboardTabBtn" class="tab-btn">
+                <i class="fa-solid fa-chart-line"></i> AWS Security Dashboard
+            </button>
+        </div>
+
         <main>
-            <section class="hero">
-                <h2>Secure Your Buckets</h2>
-                <p>Detect public S3 bucket misconfigurations safely and instantly. Client-side processing ensures your
-                    data never leaves your browser.</p>
-            </section>
+            <!-- TAB 1: S3 Passive Scanner -->
+            <div id="s3ScannerTabContent" class="tab-content">
+                <section class="hero">
+                    <h2>Secure Your S3 Buckets</h2>
+                    <p>Detect public S3 bucket misconfigurations safely and instantly. Client-side processing ensures your
+                        data never leaves your browser.</p>
+                </section>
 
-            <section class="scanner-interface">
-                <div class="input-group">
-                    <input type="text" id="bucketInput" placeholder="Enter Bucket Name or URL (e.g., my-bucket)"
-                        autocomplete="off">
-                    <button id="scanBtn">
-                        <span class="btn-text">Scan Bucket</span>
-                        <div class="spinner hidden"></div>
-                    </button>
-                </div>
-                <p class="input-hint">Enter the bucket name (e.g., <code>flaws.cloud</code>) or full URL.</p>
-            </section>
-
-            <section id="resultsSection" class="results-section hidden">
-                <div class="results-header">
-                    <h3>Scan Results: <span id="targetBucketName"></span></h3>
-                    <div class="actions">
-                        <button id="exportBtn" class="secondary-btn"><i class="fa-solid fa-download"></i> Export
-                            Report</button>
+                <section class="scanner-interface">
+                    <div class="input-group">
+                        <input type="text" id="bucketInput" placeholder="Enter Bucket Name or URL (e.g., my-bucket)"
+                            autocomplete="off">
+                        <button id="scanBtn">
+                            <span class="btn-text">Scan Bucket</span>
+                            <div class="spinner hidden"></div>
+                        </button>
                     </div>
-                </div>
+                    <p class="input-hint">Enter the bucket name (e.g., <code>flaws.cloud</code>) or full URL.</p>
+                </section>
 
-                <!-- NEW: Bucket Info Section -->
-                <div class="bucket-info-card">
-                    <h4>Bucket Information</h4>
-                    <div class="info-grid">
-                        <div class="info-item">
-                            <span class="label">Region:</span>
-                            <span id="infoRegion" class="value">Unknown</span>
-                        </div>
-                        <div class="info-item">
-                            <span class="label">Endpoint:</span>
-                            <span id="infoEndpoint" class="value">-</span>
-                        </div>
-                        <div class="info-item">
-                            <span class="label">Status:</span>
-                            <span id="infoStatus" class="value">Checking...</span>
+                <section id="resultsSection" class="results-section hidden">
+                    <div class="results-header">
+                        <h3>Scan Results: <span id="targetBucketName"></span></h3>
+                        <div class="actions">
+                            <button id="exportBtn" class="secondary-btn"><i class="fa-solid fa-download"></i> Export
+                                Report</button>
                         </div>
                     </div>
-                </div>
 
-                <div class="score-card">
-                    <div class="score-circle-container">
-                        <svg class="score-ring" width="120" height="120">
-                            <circle class="score-ring-bg" stroke="#334155" stroke-width="8" fill="transparent" r="52"
-                                cx="60" cy="60" />
-                            <circle id="scoreRing" class="score-ring-fill" stroke="#10b981" stroke-width="8"
-                                fill="transparent" r="52" cx="60" cy="60" />
-                        </svg>
-                        <div class="score-value">
-                            <span id="scoreValue">0</span>
-                            <small>Risk Score</small>
+                    <div class="bucket-info-card">
+                        <h4>Bucket Information</h4>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <span class="label">Region:</span>
+                                <span id="infoRegion" class="value">Unknown</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="label">Endpoint:</span>
+                                <span id="infoEndpoint" class="value">-</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="label">Status:</span>
+                                <span id="infoStatus" class="value">Checking...</span>
+                            </div>
                         </div>
                     </div>
-                    <div class="score-details">
-                        <h4 id="riskLevel">Safe</h4>
-                        <p id="riskSummary">No issues detected so far.</p>
+
+                    <div class="score-card">
+                        <div class="score-circle-container">
+                            <svg class="score-ring" width="120" height="120">
+                                <circle class="score-ring-bg" stroke="#334155" stroke-width="8" fill="transparent" r="52"
+                                    cx="60" cy="60" />
+                                <circle id="scoreRing" class="score-ring-fill" stroke="#10b981" stroke-width="8"
+                                    fill="transparent" r="52" cx="60" cy="60" />
+                            </svg>
+                            <div class="score-value">
+                                <span id="scoreValue">0</span>
+                                <small>Risk Score</small>
+                            </div>
+                        </div>
+                        <div class="score-details">
+                            <h4 id="riskLevel">Safe</h4>
+                            <p id="riskSummary">No issues detected so far.</p>
+                        </div>
+                    </div>
+
+                    <div class="findings-grid" id="findingsGrid">
+                        <!-- Findings injected by JS -->
+                    </div>
+
+                    <div class="coverage-section">
+                        <h4><i class="fa-solid fa-clipboard-check"></i> Check List</h4>
+                        <div class="coverage-grid" id="coverageGrid">
+                            <!-- Checks injected by JS -->
+                        </div>
+                    </div>
+
+                    <div id="remediationSection" class="remediation-section hidden">
+                        <h4><i class="fa-solid fa-shield-halved"></i> Remediation Recommendations</h4>
+                        <ul id="remediationList">
+                            <!-- Remediations injected by JS -->
+                        </ul>
+                    </div>
+                </section>
+            </div>
+
+            <!-- TAB 2: AWS Security Dashboard -->
+            <div id="awsDashboardTabContent" class="tab-content hidden">
+                <section class="hero">
+                    <h2>AWS Security Audit Dashboard</h2>
+                    <p>Continuous cloud configuration security auditing. This dashboard displays the latest report compiled by your OIDC-enabled GitHub Actions scans.</p>
+                </section>
+
+                <div id="dashboardNoReport" class="no-report-card">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <h4>No Scan Report Found</h4>
+                    <p>Could not locate <code>scan_report.json</code>. Run the scanner locally or trigger the GitHub Actions workflow to generate and publish your audit report.</p>
+                    <button id="demoReportBtn" class="secondary-btn" style="margin: 0 auto;">Load Demo Data</button>
+                </div>
+
+                <div id="dashboardContent" class="hidden">
+                    <div class="bucket-info-card">
+                        <h4>Audit Metadata</h4>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <span class="label">AWS Account ID:</span>
+                                <span id="dashAccountId" class="value">-</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="label">Last Audited:</span>
+                                <span id="dashLastAudited" class="value">-</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="label">Risk Status:</span>
+                                <span id="dashRiskStatus" class="value">-</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="dashboard-grid">
+                        <div class="metric-card metric-critical">
+                            <h5>Critical</h5>
+                            <div class="value" id="countCritical">0</div>
+                        </div>
+                        <div class="metric-card metric-high">
+                            <h5>High</h5>
+                            <div class="value" id="countHigh">0</div>
+                        </div>
+                        <div class="metric-card metric-medium">
+                            <h5>Medium</h5>
+                            <div class="value" id="countMedium">0</div>
+                        </div>
+                        <div class="metric-card metric-low">
+                            <h5>Low</h5>
+                            <div class="value" id="countLow">0</div>
+                        </div>
+                    </div>
+
+                    <!-- Risk Gauge (reused style) -->
+                    <div class="score-card" style="margin-bottom: 2rem;">
+                        <div class="score-circle-container">
+                            <svg class="score-ring" width="120" height="120">
+                                <circle class="score-ring-bg" stroke="#334155" stroke-width="8" fill="transparent" r="52"
+                                    cx="60" cy="60" />
+                                <circle id="dashScoreRing" class="score-ring-fill" stroke="#10b981" stroke-width="8"
+                                    fill="transparent" r="52" cx="60" cy="60" />
+                            </svg>
+                            <div class="score-value">
+                                <span id="dashScoreValue">0</span>
+                                <small>Risk Score</small>
+                            </div>
+                        </div>
+                        <div class="score-details">
+                            <h4 id="dashRiskLevel">Safe</h4>
+                            <p id="dashRiskSummary">All audited services configured securely.</p>
+                        </div>
+                    </div>
+
+                    <!-- Filters -->
+                    <div class="filter-bar">
+                        <span class="filter-label"><i class="fa-solid fa-filter"></i> Filter by Service:</span>
+                        <button class="filter-btn active" data-service="ALL">All</button>
+                        <button class="filter-btn" data-service="S3">S3</button>
+                        <button class="filter-btn" data-service="IAM">IAM</button>
+                        <button class="filter-btn" data-service="EC2">EC2</button>
+                        <button class="filter-btn" data-service="RDS">RDS</button>
+                        <button class="filter-btn" data-service="CloudTrail">CloudTrail</button>
+                    </div>
+
+                    <!-- Dashboard Findings List -->
+                    <div id="dashboardFindingsList">
+                        <!-- Findings injected by JS -->
                     </div>
                 </div>
-
-                <div class="findings-grid" id="findingsGrid">
-                    <!-- Findings injected by JS -->
-                </div>
-
-                <!-- NEW: Scan Coverage Section -->
-                <div class="coverage-section">
-                    <h4><i class="fa-solid fa-clipboard-check"></i> Check List</h4>
-                    <div class="coverage-grid" id="coverageGrid">
-                        <!-- Checks injected by JS -->
-                    </div>
-                </div>
-
-                <div id="remediationSection" class="remediation-section hidden">
-                    <h4><i class="fa-solid fa-shield-halved"></i> Remediation Recommendations</h4>
-                    <ul id="remediationList">
-                        <!-- Remediations injected by JS -->
-                    </ul>
-                </div>
-            </section>
+            </div>
         </main>
 
         <footer>
             <p>
                 <strong>Disclaimer:</strong> This tool is for educational and authorized testing purposes only.
-                Do not scan buckets you do not own or have permission to test.
+                Do not scan AWS resources you do not own or have permission to test.
             </p>
             <p>Created with <i class="fa-solid fa-heart" style="color: #e11d48;"></i> by Ishan Patel</p>
         </footer>
@@ -213,5 +314,4 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="assets/js/scanner.js"></script>
 </body>
-
 </html>

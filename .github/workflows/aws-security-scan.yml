@@ -1,0 +1,53 @@
+name: AWS Security Scan & Dashboard Deploy
+
+on:
+  push:
+    branches: [ "master" ]
+  schedule:
+    - cron: '0 0 * * *' # Run daily at midnight UTC
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: write
+
+jobs:
+  aws-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Install Dependencies
+        run: |
+          pip install boto3
+
+      - name: Run AWS Vulnerability Scanner
+        run: |
+          python scripts/aws_vulnerability_scanner.py --output docs/scan_report.json
+
+      - name: Commit and Push Report
+        if: always()
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Check if the report file actually changed before committing
+          if [ -f docs/scan_report.json ]; then
+            git add docs/scan_report.json
+            git diff-index --quiet HEAD || git commit -m "chore: update AWS vulnerability scan report [skip ci]"
+            git push origin master
+          else
+            echo "Scan report not found, skipping commit."
+          fi
